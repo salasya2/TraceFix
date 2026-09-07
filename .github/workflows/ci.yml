@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
-      - uses: astral-sh/setup-uv@d4b2f3b6fd2f1239d2d2b1c3617718b70e39fa85 # v4
+      - uses: astral-sh/setup-uv@v4
         with:
           version: "0.8.11"
       - name: Unit and integration
