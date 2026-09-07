@@ -1,0 +1,8 @@
+id: tf003-boundary
+license: Apache-2.0
+family: boundary
+split: development
+profile: python312-pytest-v1
+baseline_failure: tests.test_rangeutil::test_inclusive
+expected_behavior: inclusive end bound
+held_out_tests: []

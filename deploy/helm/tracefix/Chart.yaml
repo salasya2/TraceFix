@@ -1,0 +1,6 @@
+apiVersion: v2
+name: tracefix
+description: TraceFix control plane and workers
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

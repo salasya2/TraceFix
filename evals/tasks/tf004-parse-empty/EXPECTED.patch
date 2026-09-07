@@ -1,0 +1,11 @@
+diff --git a/src/jsonutil.py b/src/jsonutil.py
+--- a/src/jsonutil.py
++++ b/src/jsonutil.py
+@@ -1,5 +1,7 @@
+ import json
+ 
+ 
+ def load_object(text):
++    if not text:
++        return {}
+     return json.loads(text)

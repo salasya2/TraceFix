@@ -1,0 +1,139 @@
+[project]
+name = "tracefix"
+version = "0.1.0"
+description = "Investigate failed GitHub Actions runs, reproduce Python defects, and propose independently verified patches."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [{ name = "TraceFix" }]
+dependencies = [
+  "fastapi==0.115.8",
+  "pydantic==2.10.6",
+  "pydantic-settings==2.7.1",
+  "sqlalchemy==2.0.38",
+  "alembic==1.14.1",
+  "aiosqlite==0.21.0",
+  "greenlet==3.1.1",
+  "uvicorn[standard]==0.34.0",
+  "httpx==0.28.1",
+  "python-multipart==0.0.20",
+  "pyyaml==6.0.2",
+  "structlog==25.1.0",
+  "orjson==3.10.15",
+  "prometheus-client==0.21.1",
+  "opentelemetry-api==1.30.0",
+  "opentelemetry-sdk==1.30.0",
+  "temporalio==1.8.0",
+  "anthropic==0.43.1",
+  "openai==1.61.1",
+  "cryptography==44.0.0",
+  "authlib==1.4.1",
+  "itsdangerous==2.2.0",
+  "sse-starlette==2.2.1",
+  "boto3==1.36.16",
+  "python-dotenv==1.0.1",
+]
+
+[project.optional-dependencies]
+postgres = ["asyncpg==0.30.0"]
+dev = [
+  "pytest==8.3.4",
+  "pytest-asyncio==0.25.3",
+  "ruff==0.9.6",
+]
+
+[project.scripts]
+tracefix = "tracefix.cli:main"
+
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tracefix"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"packages/domain/src/tracefix/domain" = "tracefix/domain"
+"packages/policy/src/tracefix/policy" = "tracefix/policy"
+"packages/github/src/tracefix/github" = "tracefix/github"
+"packages/agent/src/tracefix/agent" = "tracefix/agent"
+"packages/verification/src/tracefix/verification" = "tracefix/verification"
+"packages/storage/src/tracefix/storage" = "tracefix/storage"
+"apps/api/src/tracefix/api" = "tracefix/api"
+"services/orchestrator/src/tracefix/orchestrator" = "tracefix/orchestrator"
+"services/executor/src/tracefix/executor" = "tracefix/executor"
+"services/publisher/src/tracefix/publisher" = "tracefix/publisher"
+"services/credential_broker/src/tracefix/credential_broker" = "tracefix/credential_broker"
+
+[tool.hatch.build.targets.editable]
+optional-dependencies = []
+
+[tool.hatch.build.targets.editable.force-include]
+"packages/domain/src/tracefix/domain" = "tracefix/domain"
+"packages/policy/src/tracefix/policy" = "tracefix/policy"
+"packages/github/src/tracefix/github" = "tracefix/github"
+"packages/agent/src/tracefix/agent" = "tracefix/agent"
+"packages/verification/src/tracefix/verification" = "tracefix/verification"
+"packages/storage/src/tracefix/storage" = "tracefix/storage"
+"apps/api/src/tracefix/api" = "tracefix/api"
+"services/orchestrator/src/tracefix/orchestrator" = "tracefix/orchestrator"
+"services/executor/src/tracefix/executor" = "tracefix/executor"
+"services/publisher/src/tracefix/publisher" = "tracefix/publisher"
+"services/credential_broker/src/tracefix/credential_broker" = "tracefix/credential_broker"
+
+[tool.uv]
+package = true
+default-groups = ["dev"]
+
+[dependency-groups]
+dev = [
+  "pytest==8.3.4",
+  "pytest-asyncio==0.25.3",
+  "ruff==0.9.6",
+  "httpx==0.28.1",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = [
+  "src",
+  "packages/domain/src",
+  "packages/policy/src",
+  "packages/github/src",
+  "packages/agent/src",
+  "packages/verification/src",
+  "packages/storage/src",
+  "apps/api/src",
+  "services/orchestrator/src",
+  "services/executor/src",
+  "services/publisher/src",
+  "services/credential_broker/src",
+]
+filterwarnings = [
+  "ignore::DeprecationWarning",
+]
+markers = [
+  "security: adversarial and isolation tests",
+  "integration: requires local adapters or docker fixtures",
+  "e2e: full journey tests",
+  "chaos: recovery and crash tests",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = [
+  "src",
+  "packages",
+  "apps/api/src",
+  "services",
+  "tests",
+  "evals",
+  "scripts",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]

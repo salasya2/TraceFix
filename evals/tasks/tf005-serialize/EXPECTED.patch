@@ -1,0 +1,7 @@
+diff --git a/src/when.py b/src/when.py
+--- a/src/when.py
++++ b/src/when.py
+@@ -1,2 +1,2 @@
+ def isoformat(value):
+-    return str(value)
++    return value.isoformat()

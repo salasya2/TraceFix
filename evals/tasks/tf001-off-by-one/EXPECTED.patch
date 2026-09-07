@@ -1,0 +1,9 @@
+diff --git a/src/stats.py b/src/stats.py
+--- a/src/stats.py
++++ b/src/stats.py
+@@ -1,4 +1,4 @@
+ def average(nums):
+     if not nums:
+         raise ValueError("empty")
+-    return sum(nums) / (len(nums) - 1)
++    return sum(nums) / len(nums)

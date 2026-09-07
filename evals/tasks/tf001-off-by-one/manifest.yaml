@@ -1,0 +1,11 @@
+id: tf001-off-by-one
+license: Apache-2.0
+family: off_by_one
+split: development
+broken_revision: deadbeefcafebabe
+runtime_image: local-python
+dependency_hashes: []
+profile: python312-pytest-v1
+baseline_failure: tests.test_stats::test_average
+expected_behavior: average uses the count of elements
+held_out_tests: []

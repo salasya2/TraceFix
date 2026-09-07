@@ -1,0 +1,9 @@
+diff --git a/src/httputil.py b/src/httputil.py
+--- a/src/httputil.py
++++ b/src/httputil.py
+@@ -1,4 +1,4 @@
+ def status_for(error):
+     if error:
+-        return 200
++        return 500
+     return 200

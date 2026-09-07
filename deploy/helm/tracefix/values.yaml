@@ -1,0 +1,16 @@
+image:
+  repository: ghcr.io/example/tracefix
+  tag: "0.1.0"
+  digest: ""  # set immutable digest; never latest
+
+controlPlane:
+  replicas: 2
+
+executor:
+  runtimeClassName: gvisor
+  failClosedWithoutRuntimeClass: true
+  networkPolicy: deny-all-except-broker
+
+publisher:
+  enabled: true
+  separateAccount: true

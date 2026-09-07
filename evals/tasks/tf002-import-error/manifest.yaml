@@ -1,0 +1,10 @@
+id: tf002-import-error
+license: Apache-2.0
+family: import
+split: development
+broken_revision: a
+runtime_image: local-python
+profile: python312-pytest-v1
+baseline_failure: tests.test_parse::test_parse_int
+expected_behavior: parse_int imports json.loads
+held_out_tests: []

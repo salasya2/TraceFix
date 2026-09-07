@@ -1,0 +1,7 @@
+diff --git a/src/rangeutil.py b/src/rangeutil.py
+--- a/src/rangeutil.py
++++ b/src/rangeutil.py
+@@ -1,2 +1,2 @@
+ def inclusive_range(lo, hi):
+-    return list(range(lo, hi))
++    return list(range(lo, hi + 1))

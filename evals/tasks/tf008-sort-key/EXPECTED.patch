@@ -1,0 +1,7 @@
+diff --git a/src/order.py b/src/order.py
+--- a/src/order.py
++++ b/src/order.py
+@@ -1,2 +1,2 @@
+ def by_age(people):
+-    return sorted(people, key=lambda p: p["name"])
++    return sorted(people, key=lambda p: p["age"])

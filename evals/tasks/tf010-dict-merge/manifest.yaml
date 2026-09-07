@@ -1,0 +1,8 @@
+id: tf010-dict-merge
+license: Apache-2.0
+family: mutation
+split: held-out
+profile: python312-pytest-v1
+baseline_failure: tests.test_merge::test_does_not_mutate
+expected_behavior: merge does not mutate the input mapping
+held_out_tests: []

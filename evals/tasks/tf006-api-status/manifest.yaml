@@ -1,0 +1,8 @@
+id: tf006-api-status
+license: Apache-2.0
+family: api
+split: development
+profile: python312-pytest-v1
+baseline_failure: tests.test_httputil::test_error_is_500
+expected_behavior: errors return HTTP 500
+held_out_tests: []

@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.sqlite3
+*.db
+
+# Node
+apps/web/node_modules/
+apps/web/dist/
+pnpm-debug.log*
+
+# Local runtime
+.env
+artifacts/
+.data/
+*.log
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+
+# Helm
+*.tgz
+
+# Secrets
+*.pem
+*.key
+!docs/**/*.md

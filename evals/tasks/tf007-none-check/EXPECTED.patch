@@ -1,0 +1,8 @@
+diff --git a/src/names.py b/src/names.py
+--- a/src/names.py
++++ b/src/names.py
+@@ -1,2 +1,4 @@
+ def display_name(user):
++    if not user:
++        return ""
+     return user["name"].upper()

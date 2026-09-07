@@ -1,0 +1,62 @@
+version: "3"
+
+env:
+  PYTHONUTF8: "1"
+
+vars:
+  UV: uv
+  PY: uv run python
+
+tasks:
+  bootstrap:
+    desc: Validate prerequisites and install locked dependencies
+    cmds:
+      - "{{.PY}} scripts/tf.py bootstrap"
+
+  dev:
+    desc: Start infrastructure, migrations, API, workers and UI
+    cmds:
+      - "{{.PY}} scripts/tf.py dev"
+
+  demo:
+    desc: Execute a deterministic owned sample failure through the real pipeline
+    cmds:
+      - "{{.PY}} scripts/tf.py demo"
+
+  lint:
+    desc: Ruff, Python typing surface, TypeScript and frontend lint
+    cmds:
+      - "{{.PY}} scripts/tf.py lint"
+
+  test:unit:
+    cmds:
+      - "{{.PY}} scripts/tf.py test unit"
+
+  test:integration:
+    cmds:
+      - "{{.PY}} scripts/tf.py test integration"
+
+  test:security:
+    cmds:
+      - "{{.PY}} scripts/tf.py test security"
+
+  test:e2e:
+    cmds:
+      - "{{.PY}} scripts/tf.py test e2e"
+
+  test:chaos:
+    cmds:
+      - "{{.PY}} scripts/tf.py test chaos"
+
+  eval:
+    cmds:
+      - "{{.PY}} scripts/tf.py eval --split development --output artifacts/evaluation.json"
+
+  build:
+    desc: Build versioned deployment images
+    cmds:
+      - "{{.PY}} scripts/tf.py build"
+
+  verify:staging:
+    cmds:
+      - "{{.PY}} scripts/tf.py verify-staging"

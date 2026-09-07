@@ -1,0 +1,7 @@
+diff --git a/src/cut.py b/src/cut.py
+--- a/src/cut.py
++++ b/src/cut.py
+@@ -1,2 +1,2 @@
+ def rest(text):
+-    return text[1:1]
++    return text[1:]

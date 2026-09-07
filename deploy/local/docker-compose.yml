@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:17.4
+    environment:
+      POSTGRES_USER: tracefix
+      POSTGRES_PASSWORD: tracefix
+      POSTGRES_DB: tracefix
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tracefix"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:RELEASE.2025-01-20T14-49-07Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio-password
+    ports: ["9000:9000", "9001:9001"]
+
+  temporal:
+    image: temporalio/auto-setup:1.27.2
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: tracefix
+      POSTGRES_PWD: tracefix
+      POSTGRES_SEEDS: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: ../..
+      dockerfile: deploy/local/Dockerfile
+    environment:
+      TRACEFIX_PROFILE: compose
+      DATABASE_URL: postgresql+asyncpg://tracefix:tracefix@postgres:5432/tracefix
+      TRACEFIX_ORCHESTRATOR: temporal
+      TEMPORAL_ADDRESS: temporal:7233
+      TRACEFIX_ARTIFACT_BACKEND: s3
+      AWS_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: minio
+      AWS_SECRET_ACCESS_KEY: minio-password
+      TRACEFIX_MODEL_PROVIDER: fixture
+    ports: ["8080:8080"]
+    depends_on: [postgres, temporal, minio]
+    command: ["python", "scripts/tf.py", "demo"]
+
+volumes:
+  pgdata:

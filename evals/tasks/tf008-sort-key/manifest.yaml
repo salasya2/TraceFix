@@ -1,0 +1,8 @@
+id: tf008-sort-key
+license: Apache-2.0
+family: sort
+split: validation
+profile: python312-pytest-v1
+baseline_failure: tests.test_order::test_sort
+expected_behavior: sort by age
+held_out_tests: []
