@@ -27,7 +27,7 @@ Matches the enterprise build specification: `apps/api`, `apps/web`, `services/*`
 | pnpm | 10.34.5 |
 | Docker | 28.0.1 |
 | GitHub API version | 2022-11-28 |
-| Default real model | `grok-4.5` via SpaceXAI (`XAI_API_KEY`) |
+| Default real model | `claude-sonnet-5` via Anthropic (`ANTHROPIC_API_KEY`) |
 
 Windows: run local orchestration under WSL2/Linux for production-like Docker isolation. The embedded demo uses a process executor and works on Windows.
 
@@ -44,7 +44,12 @@ python scripts/tf.py test security
 python scripts/tf.py test e2e
 python scripts/tf.py lint
 python scripts/tf.py eval --split development --output artifacts/evaluation.json
+python scripts/tf.py openapi
+python scripts/tf.py backup
+python scripts/tf.py verify-staging
 ```
+
+Checkout path: `C:\Users\saite\OneDrive\Documents\Masters\FAANG\tracefix`.
 
 `demo` runs the owned `tf001-off-by-one` fixture through the real API workflow, executor, verifier, and dashboard data path. The fixture agent is **labeled simulated**. Verification still executes pytest twice on the baseline and once on a fresh patched copy.
 
@@ -62,6 +67,8 @@ python scripts/tf.py eval --split development --output artifacts/evaluation.json
 - Publication is digest-bound, lock-keyed per logical run attempt, and fails closed when workflow safety is unknown.
 - Row-level security is defined for PostgreSQL; the application also filters every query by `tenant_id`.
 
+Docs: [architecture](docs/architecture.md), [OpenAPI](docs/openapi.json) (generated), [API examples](docs/api-examples.md), [canary/rollback](docs/canary-rollback.md), [runbooks](docs/runbooks/).
+
 ## What is not claimed
 
-gVisor containment, 99.9% API availability, and live GitHub App publication are not marked passing until those environments are executed. Local Docker tests do not demonstrate production isolation.
+gVisor containment, 99.9% API availability, and live GitHub App publication are not marked passing until those environments are executed. Local Docker tests do not demonstrate production isolation. PostgreSQL RLS SQL is applied on Postgres; the embedded demo uses SQLite plus application `tenant_id` filters.

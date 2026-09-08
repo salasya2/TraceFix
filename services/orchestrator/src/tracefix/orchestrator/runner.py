@@ -81,7 +81,7 @@ async def run_investigation(
     policy: RepositoryPolicy,
     traceback: str,
     provider_name: str = "fixture",
-    model: str = "grok-4.5",
+    model: str = "claude-sonnet-5",
 ) -> RepairRun:
     async with runtime.sessions() as session:
         run = await session.get(RepairRun, run_id)

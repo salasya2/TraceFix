@@ -5,6 +5,7 @@ from typing import Annotated
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
@@ -16,6 +17,14 @@ from tracefix.domain.states import RepairRunState
 from tracefix.storage.models import Approval, Candidate, RepairRun, RepairRunEvent, VerificationRecord
 
 router = APIRouter()
+
+
+class ManualRunBody(BaseModel):
+    github_run_id: int
+    github_attempt: int = 1
+    source_sha: str
+    execution_sha: str
+    base_sha: str | None = None
 
 
 def _run_out(run: RepairRun) -> RepairRunOut:

@@ -12,7 +12,7 @@ from pkgutil import extend_path
 __version__ = "0.1.0"
 PINNED_GITHUB_API_VERSION = "2022-11-28"
 PINNED_PROMPT_VERSION = "v1"
-DEFAULT_MODEL_ID = "grok-4.5"
+DEFAULT_MODEL_ID = "claude-sonnet-5"
 
 __path__ = extend_path(__path__, __name__)
 _ROOT = Path(__file__).resolve().parents[2]

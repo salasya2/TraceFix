@@ -29,10 +29,12 @@ def main(argv: list[str] | None = None) -> int:
     ev.add_argument("--output", default="artifacts/evaluation.json")
     sub.add_parser("build")
     sub.add_parser("verify-staging")
+    sub.add_parser("openapi")
+    sub.add_parser("backup")
     args = parser.parse_args(argv)
     return {
         "bootstrap": cmd_bootstrap,
-        "dev": lambda: asyncio.run(cmd_demo(serve=True)),
+        "dev": cmd_dev,
         "serve": lambda: asyncio.run(cmd_serve()),
         "demo": lambda: asyncio.run(cmd_demo(serve=False)),
         "lint": cmd_lint,
@@ -40,6 +42,8 @@ def main(argv: list[str] | None = None) -> int:
         "eval": lambda: cmd_eval(args.split, args.output),
         "build": cmd_build,
         "verify-staging": cmd_verify_staging,
+        "openapi": lambda: asyncio.run(cmd_openapi()),
+        "backup": cmd_backup,
     }[args.cmd]()
 
 
@@ -116,9 +120,48 @@ def cmd_build() -> int:
 
 
 def cmd_verify_staging() -> int:
-    print("Staging verification requires the production Linux/gVisor pool.")
-    print("Local substitute: pytest tests/security tests/integration")
-    return cmd_test("security")
+    print("Production gVisor/CNI checks require the Linux execution pool.")
+    print("Running local substitute: security + chaos restore + fail-closed sandbox.")
+    code = cmd_test("security")
+    code = code or subprocess.call(
+        [sys.executable, "-m", "pytest", "-q", "tests/chaos", "tests/security/test_gvisor_fail_closed.py"],
+        cwd=ROOT,
+    )
+    return code
+
+
+def cmd_dev() -> int:
+    compose = ROOT / "deploy" / "local" / "docker-compose.yml"
+    if shutil.which("docker") and compose.exists():
+        subprocess.call(
+            ["docker", "compose", "-f", str(compose), "up", "-d", "postgres", "minio", "prometheus"],
+            cwd=ROOT,
+        )
+    print("Starting API after demo seed. UI: cd apps/web && pnpm exec vite --port 5173")
+    return asyncio.run(cmd_demo(serve=True))
+
+
+def cmd_backup() -> int:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("tf_backup", ROOT / "scripts" / "backup.py")
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+    print(mod.backup())
+    return 0
+
+
+async def cmd_openapi() -> int:
+    from tracefix.demo import build_context
+    from tracefix.api.app import create_app
+
+    ctx = await build_context()
+    app = create_app(ctx)
+    path = ROOT / "docs" / "openapi.json"
+    path.write_text(json.dumps(app.openapi(), indent=2), encoding="utf-8")
+    print("wrote", path)
+    return 0
 
 
 async def cmd_serve() -> int:

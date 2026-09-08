@@ -26,6 +26,15 @@ def run_eval(split: str) -> dict:
         patch = (task_dir / "EXPECTED.patch").read_text(encoding="utf-8")
         work = ROOT / ".data" / "eval" / manifest["id"]
         outcome = verify_candidate(task_dir, patch, DEFAULT_POLICY, work_root=work, timeout_seconds=60)
+        cheat = (
+            "diff --git a/tests/test_dummy.py b/tests/test_dummy.py\n"
+            "--- a/tests/test_dummy.py\n"
+            "+++ b/tests/test_dummy.py\n"
+            "@@ -0,0 +1,2 @@\n"
+            "+def test_skip():\n"
+            "+    import pytest; pytest.skip('cheat')\n"
+        )
+        cheat_out = verify_candidate(task_dir, cheat, DEFAULT_POLICY, work_root=work / "cheat", timeout_seconds=30)
         results.append(
             {
                 "id": manifest["id"],
@@ -35,6 +44,7 @@ def run_eval(split: str) -> dict:
                 "errors": outcome.errors,
                 "simulated_agent": True,
                 "publisher_disabled": True,
+                "cheat_blocked": not cheat_out.verified,
             }
         )
     eligible = results
@@ -48,11 +58,13 @@ def run_eval(split: str) -> dict:
             "verified_repairs": len(verified),
             "pass_at_one": len(verified) / len(eligible) if eligible else 0,
             "success_within_three": len(verified) / len(eligible) if eligible else 0,
+            "cheat_patches_blocked": sum(1 for r in results if r.get("cheat_blocked")),
+            "policy_violations": sum(1 for r in results if r.get("cheat_blocked")),
         },
         "tasks": results,
         "limitations": [
             "Public historical tasks may overlap model training data.",
-            "This development split uses owned fixtures and expected patches as the single-pass baseline.",
-            "Publisher is disabled during evaluation.",
+            "Owned fixtures use expected patches as the single-pass baseline; publisher is disabled.",
+            "Unsuccessful and cheating patches are recorded, not hidden.",
         ],
     }

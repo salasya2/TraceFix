@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     python_bin: str = Field(default="python", alias="TRACEFIX_PYTHON_BIN")
 
     model_provider: str = Field(default="fixture", alias="TRACEFIX_MODEL_PROVIDER")
-    model_id: str = Field(default="grok-4.5", alias="TRACEFIX_MODEL_ID")
+    model_id: str = Field(default="claude-sonnet-5", alias="TRACEFIX_MODEL_ID")
     prompt_version: str = Field(default="v1", alias="TRACEFIX_PROMPT_VERSION")
     xai_api_key: str = Field(default="", alias="XAI_API_KEY")
     anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")

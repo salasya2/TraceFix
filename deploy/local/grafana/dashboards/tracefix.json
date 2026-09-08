@@ -1,0 +1,18 @@
+{
+  "title": "TraceFix",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Webhook accept/reject",
+      "targets": [{ "expr": "sum by (result) (tracefix_webhooks_total)" }]
+    },
+    {
+      "type": "stat",
+      "title": "Verification outcomes",
+      "targets": [{ "expr": "sum by (result) (tracefix_verification_total)" }]
+    }
+  ],
+  "schemaVersion": 39,
+  "uid": "tracefix",
+  "version": 1
+}

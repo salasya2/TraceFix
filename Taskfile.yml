@@ -60,3 +60,11 @@ tasks:
   verify:staging:
     cmds:
       - "{{.PY}} scripts/tf.py verify-staging"
+
+  openapi:
+    cmds:
+      - "{{.PY}} scripts/tf.py openapi"
+
+  backup:
+    cmds:
+      - "{{.PY}} scripts/tf.py backup"

@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
 
 from tracefix.api.deps import AppContext, get_ctx
+from tracefix.api.metrics import WEBHOOKS
 from tracefix.domain.reasons import ReasonCode
 from tracefix.domain.states import RepairRunState
 from tracefix.github.schemas import WorkflowRunEvent
@@ -45,6 +46,7 @@ async def github_webhook(request: Request) -> dict:
         )
         session.add(row)
         if not ok:
+            WEBHOOKS.labels(result="rejected").inc()
             await session.commit()
             raise HTTPException(status_code=401, detail={"code": "SIGNATURE_INVALID", "message": "bad signature"})
         if event_type != "workflow_run":
@@ -134,4 +136,18 @@ async def github_webhook(request: Request) -> dict:
             )
         )
         await session.commit()
+        WEBHOOKS.labels(result="accepted").inc()
         return {"accepted": True, "run_id": str(run.id)}
+
+
+@router.post("/v1/ops/reconcile-github")
+async def reconcile_github(request: Request) -> dict:
+    from tracefix.github.reconcile import ReconcileCursor, reconcile_failed_runs
+
+    ctx: AppContext = get_ctx(request)
+    found = 0
+    for key, repo in ctx.github.repos.items():
+        owner, name = key.split("/", 1)
+        cursor = ReconcileCursor(set())
+        found += len(reconcile_failed_runs(ctx.github, owner, name, cursor))
+    return {"scanned_failures": found}

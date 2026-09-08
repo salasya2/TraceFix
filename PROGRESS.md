@@ -2,39 +2,36 @@
 
 Updated: 2026-09-07
 
+Checkout: `C:\Users\saite\OneDrive\Documents\Masters\FAANG\tracefix`
+
 ## Phase status
 
 | Phase | Status | Evidence |
 |---|---|---|
-| 0 Contracts and threat model | complete | `docs/adr/*`, `docs/threat-model.md`, policy schema, fixture tasks |
+| 0 Contracts and threat model | complete | `docs/adr/*`, `docs/threat-model.md`, `docs/architecture.md`, policy schema, fixture tasks |
 | 1 Reproducible verifier | complete | `packages/verification`, `tests/integration/test_verification.py` |
-| 2 Durable ingestion | complete (embedded) | webhook HMAC, delivery+logical dedup, outbox, SQLite/Postgres schema |
-| 3 Constrained agent | complete | typed tools, fixture + SpaceXAI + Anthropic providers, cost reservation |
-| 4 Maintainer product | complete (dev auth) | FastAPI + React dashboard, two seeded tenants, RLS SQL for Postgres |
-| 5 Hostile execution | local adapter only | process + Docker adapters; gVisor not executed on this host |
-| 6 Controlled publishing | complete against fixture GitHub | digest-bound approval, one draft PR per logical attempt, audit chain |
-| 7 Operations and quality | partial | compose/helm/terraform, evals, runbooks; staging restore drill not executed |
+| 2 Durable ingestion | complete (embedded + outbox) | HMAC, delivery+logical dedup, outbox dispatcher, webhook reconciler, Temporal workflow/worker definitions |
+| 3 Constrained agent | complete | typed tools, fixture + Anthropic (default live) + optional SpaceXAI, cost reservation |
+| 4 Maintainer product | complete (dev + OIDC PKCE) | FastAPI, React, login, two tenants, RLS SQL, audit export |
+| 5 Hostile execution | fail-closed production adapter | process + Docker local; `GVisorAdapter` refuses to schedule without `runsc` |
+| 6 Controlled publishing | complete against fixture GitHub | digest-bound approval, lock, safety fingerprint, one draft PR |
+| 7 Operations and quality | complete for embedded/compose | backup/restore scripts, Grafana/Prometheus manifests, eval report, canary/rollback doc |
 
-## Verified on this host (2026-09-07)
+## Definition of done (scoped pilot)
 
-- `uv run pytest -q` — 21 passed (unit, integration, security, e2e, chaos)
-- `python scripts/tf.py demo` — tf001 reproduced, independently verified, `AWAITING_APPROVAL`
-- Maintainer approve + publish — fixture draft PR `https://github.com/acme/stats/pull/1`, run state `PR_OPENED`
-- Tenant B cannot read tenant A (HTTP 404)
-- `eval --split development` — 7/7 owned tasks verified with publisher disabled
-- Dashboard Vite on :5173 and API on :8080 served live data
+1. Working API, dashboard, workflow, agent, executor, verifier, publisher — yes (embedded adapters).
+2. `python scripts/tf.py demo` owned-repo journey with real pytest — yes.
+3. OpenAPI (generated), migrations, architecture, threat model, API examples, policy, ADRs — yes.
+4. Compose/Helm/Terraform, backup/restore, fail-closed sandbox admission — yes; production gVisor/CNI **not executed**.
+5. Unit/integration/security/e2e/chaos tests — yes.
+6. Owned evals with cheating patches recorded as blocked — yes. Not 50 licensed tasks.
+7. Metrics endpoint, Grafana dashboard JSON, runbooks, retention job, audit export, emergency stop — yes.
+8. Demo: fail → reproduce → patch → verify → approve → draft PR — yes.
 
 ## Unresolved / environment-blocked
 
-- Live GitHub App private key and webhook secret are not present; fixture GitHub is used.
-- PostgreSQL RLS runtime-role tests require a Postgres instance and `tracefix_app` role.
-- gVisor `runsc` RuntimeClass and CNI deny-list tests require the Linux execution pool.
-- OIDC/Keycloak path is implemented as configuration, not a live IdP in embedded mode.
-- Temporal worker is defined; demo uses the in-process runner.
-
-## Next vertical slice
-
-1. `python scripts/tf.py bootstrap`
-2. `python scripts/tf.py test all`
-3. Point `XAI_API_KEY` at SpaceXAI and set `TRACEFIX_MODEL_PROVIDER=spacexai` for a live agent pass on `tf001`.
-4. Bring up `deploy/local/docker-compose.yml` for Postgres + Temporal.
+- Live GitHub App credentials are not present.
+- gVisor `runsc` RuntimeClass and CNI deny-list tests require the dedicated Linux pool.
+- Postgres RLS runtime-role tests require a live Postgres (`tracefix_app` NOSUPERUSER NOBYPASSRLS). SQL is installed on Postgres; SQLite uses application filters.
+- Temporal worker requires `TRACEFIX_ORCHESTRATOR=temporal` and a Temporal server.
+- SLO numbers are targets, not measured uptime.

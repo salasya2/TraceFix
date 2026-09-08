@@ -12,8 +12,8 @@ Do not use floating `latest` tags in deployment or benchmark manifests.
 | Alembic | 1.14.1 |
 | Temporal Python SDK | 1.8.0 |
 | Anthropic SDK | 0.43.1 |
-| OpenAI-compatible client (SpaceXAI) | 1.61.1 |
-| Default SpaceXAI model | `grok-4.5` |
+| Default live model | `claude-sonnet-5` (Anthropic) |
+| OpenAI-compatible client (optional SpaceXAI) | 1.61.1 |
 | Prompt version | `v1` |
 | React | 18.3.1 |
 | Vite | 6.0.11 |

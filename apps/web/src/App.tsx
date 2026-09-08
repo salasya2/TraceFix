@@ -5,6 +5,7 @@ import PatchReview from "./pages/PatchReview";
 import Repositories from "./pages/Repositories";
 import SettingsPage from "./pages/Settings";
 import UsagePage from "./pages/Usage";
+import Login from "./pages/Login";
 
 export default function App() {
   return (
@@ -15,9 +16,11 @@ export default function App() {
         <NavLink to="/repositories">Repositories</NavLink>
         <NavLink to="/usage">Usage</NavLink>
         <NavLink to="/settings">Organization</NavLink>
+        <NavLink to="/login">Sign in</NavLink>
       </nav>
       <main className="main">
         <Routes>
+          <Route path="/login" element={<Login />} />
           <Route path="/" element={<Overview />} />
           <Route path="/runs/:id" element={<RunDetail />} />
           <Route path="/runs/:id/patch/:candidateId" element={<PatchReview />} />
