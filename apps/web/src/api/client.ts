@@ -22,6 +22,16 @@ export const api = {
     req(`/v1/candidates/${id}/approve`, { method: "POST", body: JSON.stringify({ patch_digest }) }),
   publish: (id: string) => req<PublishResult>(`/v1/candidates/${id}/publish`, { method: "POST" }),
   repos: () => req<{ items: Repo[] }>("/v1/repositories"),
+  repoPolicy: (id: string) => req<{ version: number; document: PolicyDoc }>(`/v1/repositories/${id}/policy`),
+  updatePolicy: (id: string, document: PolicyDoc, expected_version: number) =>
+    req<{ version: number; document: PolicyDoc }>(`/v1/repositories/${id}/policy`, {
+      method: "PUT",
+      body: JSON.stringify({ document, expected_version }),
+    }),
+  me: () => req<{ email: string; role: string; tenant_id: string }>("/v1/auth/me"),
+  authConfig: () => req<{ auth_mode: string; dev_login: boolean; oidc_configured: boolean }>("/v1/auth/config"),
+  emergencyStop: (engaged: boolean) =>
+    req(`/v1/organization/emergency-stop`, { method: "POST", body: JSON.stringify({ engaged }) }),
   usage: () => req<{ reserved_usd: number; settled_usd: number }>("/v1/usage"),
   audit: () => req<{ items: Audit[] }>("/v1/audit-events"),
   cancel: (id: string) => req(`/v1/repair-runs/${id}/cancel`, { method: "POST" }),
@@ -56,4 +66,11 @@ export type CandidateDetail = {
 
 export type PublishResult = { mode: string; pr_url?: string; branch?: string };
 export type Repo = { id: string; full_name: string; mode: string; publication_mode: string; selected: boolean };
+export type PolicyDoc = {
+  schema_version: number;
+  mode: string;
+  source_paths: string[];
+  eligible_events: string[];
+  execution_profile: string;
+};
 export type Audit = { id: string; actor: string; action: string; target_type: string; at?: string };

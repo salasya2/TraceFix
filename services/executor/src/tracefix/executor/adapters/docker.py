@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import shutil
-from pathlib import Path
+import time
 
-from tracefix.executor.broker import JobSpec
-from tracefix.verification.harness import HarnessResult, run_pytest
+from tracefix.executor.broker import JobSpec, SandboxRuntimeUnavailable
+from tracefix.verification.harness import HarnessResult, result_from_junit, sanitize_pytest_args
 
 
 class DockerAdapter:
@@ -13,25 +13,27 @@ class DockerAdapter:
 
     Production requires gVisor runsc + RuntimeClass and must fail closed
     if that runtime is unavailable. This adapter never silently claims
-    gVisor enforcement.
+    gVisor enforcement and never falls back to the host interpreter.
     """
 
     image = "python:3.12.8-bookworm"
+    runtime: str | None = None
 
-    async def run_tests(self, spec: JobSpec, extra_args: list[str] | None = None) -> HarnessResult:
+    def __init__(self) -> None:
+        self._containers: dict[str, str] = {}
+
+    def _docker(self) -> str:
         docker = shutil.which("docker")
         if not docker:
-            return await asyncio.to_thread(
-                run_pytest,
-                spec.snapshot,
-                extra_args=extra_args,
-                timeout_seconds=spec.timeout_seconds,
-            )
-        work = Path(spec.snapshot)
+            raise SandboxRuntimeUnavailable("docker is not available; refusing host fallback")
+        return docker
+
+    def _run_cmd(self, docker: str, spec: JobSpec, extra_args: list[str] | None, name: str) -> list[str]:
         cmd = [
             docker,
             "run",
-            "--rm",
+            "--name",
+            name,
             "--network",
             "none",
             "--read-only",
@@ -48,40 +50,70 @@ class DockerAdapter:
             "--security-opt",
             "no-new-privileges",
             "-v",
-            f"{work}:/work:rw",
+            f"{spec.snapshot}:/work:rw",
             "-w",
             "/work",
-            self.image,
-            "python",
-            "-m",
-            "pytest",
-            "-p",
-            "no:cacheprovider",
-            "--junitxml=junit.xml",
-            "-q",
-            *(extra_args or []),
         ]
+        if self.runtime:
+            cmd.extend(["--runtime", self.runtime])
+        cmd.extend(
+            [
+                self.image,
+                "python",
+                "-m",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "--junitxml=junit.xml",
+                "-q",
+                "tests",
+                *sanitize_pytest_args(extra_args),
+            ]
+        )
+        return cmd
+
+    async def run_tests(
+        self, spec: JobSpec, extra_args: list[str] | None = None, sandbox_id: str | None = None
+    ) -> HarnessResult:
+        docker = self._docker()
+        name = f"tf-{(sandbox_id or spec.run_id)[:20]}"
+        self._containers[sandbox_id or name] = name
+        cmd = self._run_cmd(docker, spec, extra_args, name)
+        start = time.monotonic()
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        timed_out = False
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=spec.timeout_seconds)
+            stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=spec.timeout_seconds)
+            code = proc.returncode if proc.returncode is not None else 1
         except TimeoutError:
+            timed_out = True
             proc.kill()
-            raise
-        # Reuse local parser against the bind-mounted junit.
-        result = await asyncio.to_thread(
-            run_pytest,
+            stdout_b, stderr_b = b"", b"timeout"
+            code = 124
+            await self.terminate(sandbox_id or name)
+        duration_ms = int((time.monotonic() - start) * 1000)
+        stdout = stdout_b.decode("utf-8", "replace")[-200_000:] if isinstance(stdout_b, bytes) else ""
+        stderr = stderr_b.decode("utf-8", "replace")[-200_000:] if isinstance(stderr_b, bytes) else ""
+        result = result_from_junit(
             spec.snapshot,
-            extra_args=["--collect-only"],
-            timeout_seconds=30,
+            exit_code=code,
+            stdout=stdout,
+            stderr=stderr,
+            duration_ms=duration_ms,
+            timed_out=timed_out,
         )
-        result.exit_code = proc.returncode or 0
-        result.stdout = stdout.decode("utf-8", "replace")[-200_000:]
-        result.stderr = stderr.decode("utf-8", "replace")[-200_000:]
         return result
 
     async def terminate(self, sandbox_id: str) -> None:
-        return None
+        name = self._containers.pop(sandbox_id, sandbox_id)
+        docker = shutil.which("docker")
+        if not docker or not name:
+            return
+        proc = await asyncio.create_subprocess_exec(
+            docker, "rm", "-f", name, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
+        )
+        await proc.wait()

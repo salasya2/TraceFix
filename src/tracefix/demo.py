@@ -8,15 +8,14 @@ from sqlalchemy import select
 
 from tracefix._paths import ROOT
 from tracefix.api.app import create_app
-from tracefix.api.auth import Principal, issue_session
 from tracefix.api.deps import AppContext
-from tracefix.api.seed import REPO_ID, TENANT_A, USER_A, principals, seed_world
+from tracefix.api.seed import REPO_ID, TENANT_A, principals, seed_world
 from tracefix.domain.contracts import LogicalRunKey
 from tracefix.domain.states import RepairRunState
 from tracefix.github.fixture import FixtureGitHub
 from tracefix.orchestrator.runner import InvestigationRuntime, run_investigation
 from tracefix.policy.schema import DEFAULT_POLICY
-from tracefix.settings import load_settings
+from tracefix.settings import Settings
 from tracefix.storage.artifacts import ArtifactStore
 from tracefix.storage.engine import create_engine_from_url, create_session_factory, init_schema
 from tracefix.storage.models import Candidate, RepairRun, RepairRunEvent
@@ -27,7 +26,15 @@ def fixture_task() -> Path:
 
 
 async def build_context() -> AppContext:
-    settings = load_settings()
+    settings = Settings(
+        env="development",
+        auth_mode="dev",
+        profile="embedded",
+        executor="process",
+        model_provider="fixture",
+        orchestrator="local",
+        allow_insecure_executor=True,
+    )
     settings.database_url = "sqlite+aiosqlite:///" + str(ROOT / ".data" / "tracefix.db")
     engine = create_engine_from_url(settings.database_url)
     await init_schema(engine)
@@ -108,7 +115,7 @@ async def run_demo(*, serve: bool = False) -> int:
         if run.diagnosis:
             print("diagnosis:", json.dumps(run.diagnosis, indent=2)[:800])
 
-    app = create_app(ctx)
+    app = create_app(ctx, start_dispatcher=serve)
     if serve:
         import uvicorn
 

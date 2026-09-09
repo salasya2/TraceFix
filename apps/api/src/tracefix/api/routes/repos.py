@@ -44,6 +44,27 @@ async def list_repos(principal: Viewer, session: Annotated[AsyncSession, Depends
     }
 
 
+@router.get("/v1/repositories/{repo_id}/policy")
+async def get_policy(
+    repo_id: UUID,
+    principal: Viewer,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict:
+    repo = await session.get(Repository, repo_id)
+    if repo is None or repo.tenant_id != principal.tenant_id:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "not found"})
+    current = (
+        await session.execute(
+            select(RepositoryPolicyRow)
+            .where(RepositoryPolicyRow.repository_id == repo.id)
+            .order_by(RepositoryPolicyRow.version.desc())
+        )
+    ).scalars().first()
+    if current is None:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "no policy"})
+    return {"version": current.version, "document": current.document}
+
+
 @router.put("/v1/repositories/{repo_id}/policy")
 async def put_policy(
     repo_id: UUID,

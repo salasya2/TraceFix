@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from tracefix._paths import ROOT
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", populate_by_name=True)
 
     env: str = Field(default="development", alias="TRACEFIX_ENV")
     profile: str = Field(default="embedded", alias="TRACEFIX_PROFILE")
@@ -18,16 +18,21 @@ class Settings(BaseSettings):
     secret_key: str = Field(default="dev-secret-change-me-please-32b", alias="TRACEFIX_SECRET_KEY")
     dev_user_email: str = Field(default="maintainer@tracefix.local", alias="TRACEFIX_DEV_USER_EMAIL")
     dev_user_role: str = Field(default="owner", alias="TRACEFIX_DEV_USER_ROLE")
+    seed_demo_data: bool = Field(default=False, alias="TRACEFIX_SEED")
 
     api_host: str = Field(default="127.0.0.1", alias="TRACEFIX_API_HOST")
     api_port: int = Field(default=8080, alias="TRACEFIX_API_PORT")
     public_url: str = Field(default="http://127.0.0.1:8080", alias="TRACEFIX_PUBLIC_URL")
     web_origin: str = Field(default="http://127.0.0.1:5173", alias="TRACEFIX_WEB_ORIGIN")
 
-    database_url: str = Field(default="sqlite+aiosqlite:///" + str(ROOT / ".data" / "tracefix.db"))
+    database_url: str = Field(
+        default="sqlite+aiosqlite:///" + str(ROOT / ".data" / "tracefix.db"),
+        validation_alias=AliasChoices("TRACEFIX_DATABASE_URL", "DATABASE_URL"),
+    )
     artifact_backend: str = Field(default="local", alias="TRACEFIX_ARTIFACT_BACKEND")
     artifact_dir: Path = Field(default=ROOT / ".data" / "artifacts", alias="TRACEFIX_ARTIFACT_DIR")
     s3_bucket: str = Field(default="tracefix-artifacts", alias="TRACEFIX_S3_BUCKET")
+    s3_endpoint_url: str = Field(default="", validation_alias=AliasChoices("TRACEFIX_S3_ENDPOINT", "AWS_ENDPOINT_URL"))
 
     orchestrator: str = Field(default="local", alias="TRACEFIX_ORCHESTRATOR")
     temporal_address: str = Field(default="127.0.0.1:7233", alias="TEMPORAL_ADDRESS")
@@ -35,6 +40,7 @@ class Settings(BaseSettings):
 
     executor: str = Field(default="process", alias="TRACEFIX_EXECUTOR")
     python_bin: str = Field(default="python", alias="TRACEFIX_PYTHON_BIN")
+    allow_insecure_executor: bool = Field(default=False, alias="TRACEFIX_ALLOW_INSECURE_EXECUTOR")
 
     model_provider: str = Field(default="fixture", alias="TRACEFIX_MODEL_PROVIDER")
     model_id: str = Field(default="claude-sonnet-5", alias="TRACEFIX_MODEL_ID")
@@ -44,8 +50,10 @@ class Settings(BaseSettings):
     model_base_url: str = Field(default="https://api.x.ai/v1", alias="TRACEFIX_MODEL_BASE_URL")
 
     github_app_id: str = Field(default="", alias="GITHUB_APP_ID")
+    github_token: str = Field(default="", alias="GITHUB_TOKEN")
     github_webhook_secret: str = Field(default="dev-webhook-secret-change-me", alias="GITHUB_WEBHOOK_SECRET")
     github_api_version: str = Field(default="2022-11-28", alias="GITHUB_API_VERSION")
+    github_api_url: str = Field(default="https://api.github.com", alias="GITHUB_API_URL")
 
     oidc_issuer: str = Field(default="", alias="OIDC_ISSUER")
     oidc_client_id: str = Field(default="", alias="OIDC_CLIENT_ID")
@@ -59,6 +67,27 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.env == "production"
 
+    @property
+    def dev_identities_allowed(self) -> bool:
+        return self.auth_mode == "dev" and not self.is_production
+
 
 def load_settings() -> Settings:
     return Settings()
+
+
+def validate_startup(settings: Settings) -> None:
+    """Refuse to boot an unsafe production configuration."""
+    if not settings.is_production:
+        return
+    errors: list[str] = []
+    if settings.auth_mode == "dev":
+        errors.append("TRACEFIX_AUTH_MODE=dev is forbidden when TRACEFIX_ENV=production")
+    if settings.secret_key.startswith("dev-secret"):
+        errors.append("TRACEFIX_SECRET_KEY must be replaced in production")
+    if settings.auth_mode == "oidc" and (not settings.oidc_issuer or not settings.oidc_client_id):
+        errors.append("OIDC_ISSUER and OIDC_CLIENT_ID are required for production OIDC")
+    if settings.executor == "process" and not settings.allow_insecure_executor:
+        errors.append("production TRACEFIX_EXECUTOR must not be process")
+    if errors:
+        raise RuntimeError("; ".join(errors))

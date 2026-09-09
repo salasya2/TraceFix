@@ -53,11 +53,13 @@ Checkout path: `C:\Users\saite\OneDrive\Documents\Masters\FAANG\tracefix`.
 
 `demo` runs the owned `tf001-off-by-one` fixture through the real API workflow, executor, verifier, and dashboard data path. The fixture agent is **labeled simulated**. Verification still executes pytest twice on the baseline and once on a fresh patched copy.
 
+`serve` starts the configured application (`TRACEFIX_*` settings, outbox dispatcher). It does **not** overwrite the database URL or force `FixtureProvider`. Production with `TRACEFIX_AUTH_MODE=dev` or the default secret key refuses to boot.
+
 ## Local profiles
 
 - `TRACEFIX_PROFILE=embedded` (default): SQLite, local disk artifacts, in-process runner, process executor, fixture GitHub.
 - `TRACEFIX_PROFILE=compose`: PostgreSQL 17, MinIO, Temporal, API, worker, web — see `deploy/local/docker-compose.yml`.
-- Production: gVisor RuntimeClass on a dedicated execution pool. Ordinary Docker is **not** the hostile-code boundary.
+- Production: gVisor RuntimeClass on a dedicated execution pool. Ordinary Docker is **not** the hostile-code boundary. `TRACEFIX_AUTH_MODE` must be `oidc`.
 
 ## Security boundaries
 

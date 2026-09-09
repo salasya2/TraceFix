@@ -132,6 +132,7 @@ async def cancel_run(
                 reason="CANCELLED_BY_USER",
             )
         )
+        await ctx.runtime.broker.terminate_run(str(run.id))
     await session.commit()
     return {"id": str(run.id), "state": run.state}
 

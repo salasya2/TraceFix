@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from uuid import UUID, uuid4
 
 from tracefix.domain.reasons import ReasonCode
 from tracefix.github.client import GitHubClient
 from tracefix.policy.publication import decide_publication
 from tracefix.policy.schema import RepositoryPolicy
+from tracefix.verification.apply import apply_unified_diff
+from tracefix.verification.diff import parse_unified_diff
 
 
 @dataclass
@@ -40,6 +44,7 @@ class PublishRequest:
     approved_base_sha: str | None
     approved_policy_version: int | None
     existing_lock: str | None = None
+    tree_digest: str | None = None
 
 
 @dataclass
@@ -53,12 +58,13 @@ class PublishResult:
     pr_url: str | None = None
     pr_number: int | None = None
     patch_artifact: bool = False
+    commit_sha: str | None = None
 
 
 class Publisher:
-    def __init__(self, github: GitHubClient) -> None:
+    def __init__(self, github: GitHubClient, locks: dict[str, str] | None = None) -> None:
         self.github = github
-        self._locks: dict[str, str] = {}
+        self._locks: dict[str, str] = locks if locks is not None else {}
         self._ops: dict[str, PublishResult] = {}
 
     def lock_key(self, tenant_id: UUID, repo_id: UUID, run_id: int, attempt: int) -> str:
@@ -121,11 +127,7 @@ class Publisher:
             self._locks[lock] = operation_id
             self._ops[operation_id] = result
             return result
-        try:
-            await self.github.create_ref(req.owner, req.repo, f"refs/heads/{branch}", req.source_sha)
-        except Exception:
-            # reconcile: ref may already exist from a timed-out create
-            pass
+        commit_sha = await self._commit_patch(req, branch)
         body = self._pr_body(req)
         pr = await self.github.create_pull(
             req.owner,
@@ -145,10 +147,58 @@ class Publisher:
             branch=branch,
             pr_url=pr.html_url,
             pr_number=pr.number,
+            commit_sha=commit_sha,
         )
         self._locks[lock] = operation_id
         self._ops[operation_id] = result
         return result
+
+    async def _commit_patch(self, req: PublishRequest, branch: str) -> str:
+        parsed = parse_unified_diff(req.patch)
+        if parsed.errors or not parsed.files:
+            raise RuntimeError("refusing to publish a patch that does not describe file changes")
+        tmp = Path(tempfile.mkdtemp(prefix="tracefix-pub-"))
+        try:
+            for file_diff in parsed.files:
+                path = file_diff.path
+                if file_diff.old_path == "/dev/null":
+                    continue
+                try:
+                    content = await self.github.get_file(req.owner, req.repo, path, ref=req.source_sha)
+                except FileNotFoundError:
+                    continue
+                target = tmp / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+            apply_unified_diff(tmp, req.patch)
+            entries: list[dict] = []
+            for file_diff in parsed.files:
+                path = file_diff.path
+                target = tmp / path
+                if not target.exists():
+                    entries.append({"path": path, "mode": "100644", "type": "blob", "sha": None})
+                    continue
+                blob_sha = await self.github.create_blob(req.owner, req.repo, target.read_text(encoding="utf-8"))
+                entries.append({"path": path, "mode": "100644", "type": "blob", "sha": blob_sha, "content": target.read_text(encoding="utf-8")})
+            tree = await self.github.create_tree(req.owner, req.repo, req.source_sha, entries)
+            commit_sha = await self.github.create_commit(
+                req.owner,
+                req.repo,
+                f"fix: TraceFix repair for run {req.github_run_id}",
+                tree,
+                [req.source_sha],
+            )
+            ref = f"refs/heads/{branch}"
+            try:
+                await self.github.create_ref(req.owner, req.repo, ref, req.source_sha)
+            except Exception:
+                pass
+            await self.github.update_ref(req.owner, req.repo, ref, commit_sha)
+            return commit_sha
+        finally:
+            import shutil
+
+            shutil.rmtree(tmp, ignore_errors=True)
 
     def _pr_body(self, req: PublishRequest) -> str:
         return (

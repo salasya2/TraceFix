@@ -8,6 +8,8 @@ COPY services services
 COPY scripts scripts
 COPY evals evals
 COPY migrations migrations
-RUN pip install --no-cache-dir .
+COPY alembic.ini ./
+RUN pip install --no-cache-dir ".[postgres]" pytest
+ENV TRACEFIX_API_HOST=0.0.0.0
 EXPOSE 8080
-CMD ["python", "scripts/tf.py", "demo"]
+CMD ["python", "scripts/tf.py", "serve"]

@@ -55,8 +55,12 @@ services:
       context: ../..
       dockerfile: deploy/local/Dockerfile
     environment:
+      TRACEFIX_ENV: development
       TRACEFIX_PROFILE: compose
-      DATABASE_URL: postgresql+asyncpg://tracefix:tracefix@postgres:5432/tracefix
+      TRACEFIX_AUTH_MODE: dev
+      TRACEFIX_SEED: "1"
+      TRACEFIX_API_HOST: 0.0.0.0
+      TRACEFIX_DATABASE_URL: postgresql+asyncpg://tracefix:tracefix@postgres:5432/tracefix
       TRACEFIX_ORCHESTRATOR: local
       TEMPORAL_ADDRESS: temporal:7233
       TRACEFIX_ARTIFACT_BACKEND: s3
@@ -65,9 +69,46 @@ services:
       AWS_SECRET_ACCESS_KEY: minio-password
       TRACEFIX_MODEL_PROVIDER: fixture
       TRACEFIX_EXECUTOR: process
+      TRACEFIX_ALLOW_INSECURE_EXECUTOR: "1"
     ports: ["8080:8080"]
-    depends_on: [postgres, minio]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
     command: ["python", "scripts/tf.py", "serve"]
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: deploy/local/Dockerfile
+    environment:
+      TRACEFIX_ENV: development
+      TRACEFIX_PROFILE: compose
+      TRACEFIX_ORCHESTRATOR: temporal
+      TRACEFIX_DATABASE_URL: postgresql+asyncpg://tracefix:tracefix@postgres:5432/tracefix
+      TEMPORAL_ADDRESS: temporal:7233
+      TRACEFIX_MODEL_PROVIDER: fixture
+      TRACEFIX_EXECUTOR: process
+      TRACEFIX_ALLOW_INSECURE_EXECUTOR: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+    command: ["python", "-m", "tracefix.orchestrator.worker"]
+    profiles: ["temporal"]
+
+  web:
+    image: node:22.12.0-bookworm
+    working_dir: /web
+    volumes:
+      - ../../apps/web:/web
+    command: ["sh", "-c", "corepack enable && pnpm install --frozen-lockfile && pnpm exec vite --host 0.0.0.0 --port 5173"]
+    ports: ["5173:5173"]
+    environment:
+      VITE_API_PROXY: http://api:8080
+    depends_on: [api]
 
 volumes:
   pgdata:

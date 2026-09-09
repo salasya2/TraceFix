@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import shutil
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from tracefix.policy.patch_policy import PatchDecision, validate_patch_text
 from tracefix.policy.schema import RepositoryPolicy
@@ -11,6 +13,8 @@ from tracefix.verification.apply import PatchApplyError, apply_unified_diff, dif
 from tracefix.verification.diff import parse_unified_diff
 from tracefix.verification.harness import HarnessResult, run_pytest
 from tracefix.verification.junit import compare_inventories
+
+TestRunner = Callable[..., Awaitable[HarnessResult] | HarnessResult]
 
 
 @dataclass
@@ -29,15 +33,46 @@ class VerificationOutcome:
     target_ids: list[str] = field(default_factory=list)
 
 
-def _hash_tree(root: Path) -> str:
+def hash_source_tree(root: Path) -> str:
     h = hashlib.sha256()
     for path in sorted(p for p in root.rglob("*") if p.is_file()):
         rel = path.relative_to(root).as_posix()
-        if rel.startswith(".pytest_cache") or rel == "junit.xml":
+        if rel.startswith(".pytest_cache") or rel in {"junit.xml", ".tracefix-pytest.ini"}:
             continue
         h.update(rel.encode())
+        h.update(b"\0")
         h.update(path.read_bytes())
     return h.hexdigest()
+
+
+def _hash_tree(root: Path) -> str:
+    return hash_source_tree(root)
+
+
+def supervisor_errors(result: HarnessResult, *, role: str) -> list[str]:
+    errors: list[str] = []
+    if result.timed_out:
+        errors.append(f"{role} timed out")
+    if result.junit_digest is None:
+        errors.append(f"{role} missing junit report")
+    if result.inventory.errors:
+        errors.extend(f"{role}: {item}" for item in result.inventory.errors)
+    if result.inventory.collected == 0 and not result.inventory.errors:
+        errors.append(f"{role} produced an empty test inventory")
+    if role == "candidate" and result.exit_code != 0:
+        errors.append(f"candidate process exit {result.exit_code}")
+    if role == "baseline" and result.exit_code not in {0, 1}:
+        errors.append(f"baseline process exit {result.exit_code}")
+    return errors
+
+
+async def _call_runner(run_tests: TestRunner | None, workdir: Path, **kwargs: Any) -> HarnessResult:
+    if run_tests is None:
+        return run_pytest(workdir, **kwargs)
+    result = run_tests(workdir, **kwargs)
+    if hasattr(result, "__await__"):
+        return await result  # type: ignore[misc]
+    return result  # type: ignore[return-value]
 
 
 def verify_candidate(
@@ -49,6 +84,39 @@ def verify_candidate(
     timeout_seconds: int = 120,
     python_bin: str | None = None,
     target_nodeids: list[str] | None = None,
+    run_tests: TestRunner | None = None,
+) -> VerificationOutcome:
+    """Synchronous verifier used by unit tests and the eval runner."""
+    import asyncio
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(
+            averify_candidate(
+                snapshot,
+                diff_text,
+                policy,
+                work_root=work_root,
+                timeout_seconds=timeout_seconds,
+                python_bin=python_bin,
+                target_nodeids=target_nodeids,
+                run_tests=run_tests,
+            )
+        )
+    raise RuntimeError("verify_candidate() cannot be used from a running event loop; await averify_candidate()")
+
+
+async def averify_candidate(
+    snapshot: Path,
+    diff_text: str,
+    policy: RepositoryPolicy,
+    *,
+    work_root: Path,
+    timeout_seconds: int = 120,
+    python_bin: str | None = None,
+    target_nodeids: list[str] | None = None,
+    run_tests: TestRunner | None = None,
 ) -> VerificationOutcome:
     parsed = parse_unified_diff(diff_text)
     applies = diff_applies_cleanly(snapshot, parsed)
@@ -84,8 +152,25 @@ def verify_candidate(
     shutil.copytree(snapshot, baseline_dir)
     shutil.copytree(snapshot, candidate_dir)
 
-    first = run_pytest(baseline_dir, timeout_seconds=timeout_seconds, python_bin=python_bin)
-    second = run_pytest(baseline_dir, timeout_seconds=timeout_seconds, python_bin=python_bin)
+    first = await _call_runner(
+        run_tests, baseline_dir, timeout_seconds=timeout_seconds, python_bin=python_bin
+    )
+    second = await _call_runner(
+        run_tests, baseline_dir, timeout_seconds=timeout_seconds, python_bin=python_bin
+    )
+    baseline_errors = supervisor_errors(first, role="baseline") + supervisor_errors(second, role="baseline")
+    if baseline_errors:
+        return VerificationOutcome(
+            False,
+            "none",
+            False,
+            first.timed_out or second.timed_out,
+            errors=baseline_errors,
+            limitations=["baseline supervisor rejected the process"],
+            baseline=second,
+            patch_decision=decision,
+            patch_digest=patch_digest,
+        )
     if first.inventory.signature() != second.inventory.signature():
         return VerificationOutcome(
             False,
@@ -125,11 +210,14 @@ def verify_candidate(
             patch_digest=patch_digest,
         )
 
-    cand = run_pytest(candidate_dir, timeout_seconds=timeout_seconds, python_bin=python_bin)
+    cand = await _call_runner(
+        run_tests, candidate_dir, timeout_seconds=timeout_seconds, python_bin=python_bin
+    )
     inventory_errors = compare_inventories(first.inventory, cand.inventory)
     still_failing = targets & cand.inventory.failed_ids
     target_passed = not still_failing and bool(targets)
     errors = list(inventory_errors)
+    errors.extend(supervisor_errors(cand, role="candidate"))
     if still_failing:
         errors.append(f"target still failing: {sorted(still_failing)}")
     if cand.inventory.errors:
@@ -152,7 +240,7 @@ def verify_candidate(
     elif verified:
         badge = "partial"
         limitations.append("baseline suite had existing failures; full-verification badge withheld")
-    tree_digest = _hash_tree(candidate_dir)
+    tree_digest = hash_source_tree(candidate_dir)
     return VerificationOutcome(
         verified=verified,
         badge=badge,

@@ -125,6 +125,8 @@ class OutboxEvent(Base):
     payload: Mapped[dict] = mapped_column(JSON)
     workflow_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
     dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
@@ -249,6 +251,9 @@ class Approval(Base):
     evidence_id: Mapped[uuid.UUID] = mapped_column(Uuid)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    safety_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    installation_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    commit_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class Publication(Base):
@@ -265,6 +270,7 @@ class Publication(Base):
     mode: Mapped[str] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(String(32), default="requested")
     candidate_digest: Mapped[str] = mapped_column(String(64))
+    commit_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class ModelCall(Base):

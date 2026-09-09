@@ -12,11 +12,55 @@ spec:
     spec:
       containers:
         - name: api
+          {{- if .Values.image.digest }}
           image: "{{ .Values.image.repository }}@{{ .Values.image.digest }}"
+          {{- else }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          {{- end }}
+          imagePullPolicy: IfNotPresent
+          command: ["python", "scripts/tf.py", "serve"]
           ports: [{ containerPort: 8080 }]
           env:
+            - name: TRACEFIX_ENV
+              value: production
             - name: TRACEFIX_PROFILE
               value: production
+            - name: TRACEFIX_AUTH_MODE
+              value: oidc
+            - name: TRACEFIX_EXECUTOR
+              value: gvisor
+            - name: TRACEFIX_API_HOST
+              value: "0.0.0.0"
+            - name: TRACEFIX_ORCHESTRATOR
+              value: temporal
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tracefix-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: tracefix-worker }
+  template:
+    metadata:
+      labels: { app: tracefix-worker }
+    spec:
+      containers:
+        - name: worker
+          {{- if .Values.image.digest }}
+          image: "{{ .Values.image.repository }}@{{ .Values.image.digest }}"
+          {{- else }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          {{- end }}
+          command: ["python", "-m", "tracefix.orchestrator.worker"]
+          env:
+            - name: TRACEFIX_ENV
+              value: production
+            - name: TRACEFIX_ORCHESTRATOR
+              value: temporal
+            - name: TRACEFIX_EXECUTOR
+              value: gvisor
 ---
 apiVersion: node.k8s.io/v1
 kind: RuntimeClass

@@ -49,10 +49,17 @@ async def test_approve_and_publish_opens_one_draft_pr(ctx: AppContext):
         )
         assert approved.status_code == 200
         published = await client.post(f"/v1/candidates/{cand['id']}/publish")
-        assert published.status_code == 200
+        assert published.status_code == 200, published.text
         body = published.json()
         assert body["mode"] == "draft_pr"
         assert body["pr_number"] == 1
+        repo = ctx.github._repo("acme", "stats")
+        branch = body["branch"]
+        ref = repo.refs.get(f"refs/heads/{branch}")
+        assert ref is not None
+        assert ref != "deadbeefcafebabe"
+        assert repo.blobs, "publisher must create blobs for the repaired tree"
+        assert any(isinstance(v, dict) and "parents" in v for v in repo.commits.values())
         again = await client.post(f"/v1/candidates/{cand['id']}/publish")
         assert again.json()["pr_number"] == 1
         denied = await client.get(

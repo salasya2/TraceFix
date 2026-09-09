@@ -6,7 +6,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Protocol
 
-from tracefix.verification.harness import HarnessResult, run_pytest
+from tracefix.verification.harness import HarnessResult
+
+
+class SandboxRuntimeUnavailable(RuntimeError):
+    """Admission must fail closed. Never silently fall back to an unenforced runtime."""
 
 
 @dataclass
@@ -36,7 +40,9 @@ class JobSpec:
 
 
 class ExecutorAdapter(Protocol):
-    async def run_tests(self, spec: JobSpec, extra_args: list[str] | None = None) -> HarnessResult: ...
+    async def run_tests(
+        self, spec: JobSpec, extra_args: list[str] | None = None, sandbox_id: str | None = None
+    ) -> HarnessResult: ...
 
     async def terminate(self, sandbox_id: str) -> None: ...
 
@@ -59,16 +65,21 @@ class ExecutionBroker:
     def issue_capability(self, tenant_id: str, run_id: str, stage: str) -> str:
         return f"cap:{tenant_id}:{run_id}:{stage}:{uuid.uuid4()}"
 
-    async def run_tests(self, spec: JobSpec, extra_args: list[str] | None = None) -> HarnessResult:
+    def _admit(self, spec: JobSpec) -> None:
         spec.validate()
-        if self.emergency_stop or spec.tenant_id in self.tenant_stops:
+        if self.emergency_stop:
+            raise RuntimeError("executor stop switch engaged")
+        if spec.tenant_id in self.tenant_stops:
             raise RuntimeError("executor stop switch engaged")
         if datetime.now(timezone.utc) > spec.expiry:
             raise RuntimeError("execution capability expired")
+
+    async def run_tests(self, spec: JobSpec, extra_args: list[str] | None = None) -> HarnessResult:
+        self._admit(spec)
         sandbox_id = f"sbx-{uuid.uuid4()}"
         self.leases[sandbox_id] = SandboxLease(sandbox_id, spec, datetime.now(timezone.utc))
         try:
-            return await self.adapter.run_tests(spec, extra_args)
+            return await self.adapter.run_tests(spec, extra_args, sandbox_id=sandbox_id)
         finally:
             await self.terminate(sandbox_id)
 
@@ -77,6 +88,20 @@ class ExecutionBroker:
         if lease and not lease.cleaned:
             await self.adapter.terminate(sandbox_id)
             lease.cleaned = True
+
+    async def terminate_run(self, run_id: str) -> int:
+        killed = 0
+        for lease in list(self.leases.values()):
+            if lease.spec.run_id == run_id and not lease.cleaned:
+                await self.terminate(lease.sandbox_id)
+                killed += 1
+        return killed
+
+    def engage_tenant_stop(self, tenant_id: str) -> None:
+        self.tenant_stops.add(tenant_id)
+
+    def clear_tenant_stop(self, tenant_id: str) -> None:
+        self.tenant_stops.discard(tenant_id)
 
     async def sweep(self) -> int:
         cleaned = 0

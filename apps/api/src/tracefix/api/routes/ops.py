@@ -34,10 +34,14 @@ async def emergency_stop(
         tenant.emergency_stop = body.engaged
         if body.engaged:
             tenant.status = "suspended"
-    ctx.runtime.broker.emergency_stop = body.engaged
     if body.engaged:
-        ctx.runtime.broker.tenant_stops.add(str(principal.tenant_id))
+        ctx.runtime.broker.engage_tenant_stop(str(principal.tenant_id))
         await suspend_tenant(session, principal.tenant_id)
+    else:
+        ctx.runtime.broker.clear_tenant_stop(str(principal.tenant_id))
+        if tenant:
+            tenant.status = "active"
+            tenant.emergency_stop = False
     await record_audit(
         session,
         tenant_id=principal.tenant_id,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,9 +13,11 @@ from tracefix.agent.tools import (
     SubmitPatchArgs,
     parse_tool_call,
 )
+from tracefix.executor.broker import ExecutionBroker, JobSpec
 from tracefix.policy.paths import matches_any, normalize_repo_path
 from tracefix.policy.schema import RepositoryPolicy
-from tracefix.verification.harness import run_pytest
+from tracefix.verification.apply import apply_unified_diff
+from tracefix.verification.harness import run_pytest, sanitize_pytest_args
 
 
 @dataclass
@@ -27,11 +30,20 @@ class Snapshot:
 
 
 class ToolRouter:
-    def __init__(self, policy: RepositoryPolicy, snapshots: dict[str, Snapshot]) -> None:
+    def __init__(
+        self,
+        policy: RepositoryPolicy,
+        snapshots: dict[str, Snapshot],
+        *,
+        broker: ExecutionBroker | None = None,
+        job_factory: Callable[..., JobSpec] | None = None,
+    ) -> None:
         self.policy = policy
         self.snapshots = snapshots
         self.submitted_patch: str | None = None
         self.test_requests: list[RequestTestArgs] = []
+        self.broker = broker
+        self.job_factory = job_factory
 
     def _snap(self, snapshot_id: str, tenant_id: str, run_id: str) -> Snapshot:
         snap = self.snapshots.get(snapshot_id)
@@ -62,15 +74,42 @@ class ToolRouter:
         if isinstance(parsed, RequestTestArgs):
             if parsed.approved_profile_id != self.policy.execution_profile:
                 raise PermissionError("profile is not approved")
+            selectors = sanitize_pytest_args(parsed.permitted_test_ids or None)
             self.test_requests.append(parsed)
             snap = next(iter(self.snapshots.values()))
-            result = run_pytest(
-                snap.root,
-                extra_args=parsed.permitted_test_ids or None,
-                timeout_seconds=self.policy.limits.sandbox_seconds,
-            )
+            work = snap.root
+            if parsed.candidate_id and parsed.candidate_id != "current" and self.submitted_patch:
+                import shutil
+                from tempfile import mkdtemp
+
+                work = Path(mkdtemp(prefix="tracefix-explore-"))
+                shutil.copytree(snap.root, work, dirs_exist_ok=True)
+                apply_unified_diff(work, self.submitted_patch)
+            result = self._run_tests(work, selectors)
             return redact(result.stdout + "\n" + result.stderr)
         raise PermissionError("tool not permitted")
+
+    def _run_tests(self, work: Path, extra_args: list[str] | None):
+        if self.broker is not None and self.job_factory is not None:
+            spec = self.job_factory(stage="explore")
+            spec.snapshot = work
+            import asyncio
+            from concurrent.futures import ThreadPoolExecutor
+
+            def _run():
+                return asyncio.run(self.broker.run_tests(spec, extra_args))
+
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                return _run()
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                return pool.submit(_run).result()
+        return run_pytest(
+            work,
+            extra_args=extra_args,
+            timeout_seconds=self.policy.limits.sandbox_seconds,
+        )
 
     def _read_file(self, args: ReadFileArgs, tenant_id: str, run_id: str) -> str:
         snap = self._snap(args.snapshot_id, tenant_id, run_id)

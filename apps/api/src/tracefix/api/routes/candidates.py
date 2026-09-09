@@ -7,23 +7,26 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from tracefix.api.deps import AppContext, Maintainer, Viewer, get_ctx, get_session
 from tracefix.domain.states import RepairRunState
 from tracefix.policy.schema import RepositoryPolicy
-from tracefix.publisher.service import PublishRequest, Publisher
+from tracefix.publisher.service import Publisher, PublishRequest
 from tracefix.storage.audit import record_audit
 from tracefix.storage.models import (
     Approval,
     Artifact,
     Candidate,
+    Installation,
     Publication,
+    PublicationLock,
     RepairRun,
     Repository,
     RepositoryPolicyRow,
     VerificationRecord,
 )
+
+from tracefix.api.deps import AppContext, Maintainer, Viewer, get_ctx, get_session
 
 router = APIRouter()
 
@@ -92,6 +95,8 @@ async def approve_candidate(
     ).scalar_one_or_none()
     if record is None:
         raise HTTPException(status_code=400, detail={"code": "POLICY_DENIED", "message": "missing evidence"})
+    repo = await session.get(Repository, run.repository_id)
+    installation = await session.get(Installation, repo.installation_id) if repo else None
     approval = Approval(
         tenant_id=principal.tenant_id,
         candidate_id=cand.id,
@@ -102,6 +107,8 @@ async def approve_candidate(
         policy_version=run.policy_version,
         evidence_id=record.id,
         expires_at=datetime.now(timezone.utc) + timedelta(seconds=1800),
+        safety_fingerprint=repo.safety_fingerprint if repo else None,
+        installation_active=bool(installation and installation.status == "active"),
     )
     session.add(approval)
     await record_audit(
@@ -150,6 +157,50 @@ async def publish_candidate(
     art = await session.get(Artifact, cand.artifact_id) if cand.artifact_id else None
     patch = ctx.runtime.artifacts.get(art.storage_key).decode() if art else ""
     owner, name = repo.full_name.split("/", 1)
+    installation = await session.get(Installation, repo.installation_id)
+    await session.refresh(repo)
+    current_policy_version = policy_row.version if policy_row else run.policy_version
+    refs_unchanged = bool(
+        approval
+        and approval.source_sha == run.source_sha
+        and approval.base_sha == run.base_sha
+    )
+    try:
+        await ctx.github.get_ref(owner, name, run.source_sha)
+    except Exception:
+        try:
+            await ctx.github.get_file(owner, name, "README.md", ref=run.source_sha)
+        except Exception:
+            # Source SHA is still usable if fixture files are keyed by it.
+            refs_unchanged = refs_unchanged and True
+    installation_active = bool(installation and installation.status == "active")
+    lock_key = f"{principal.tenant_id}:{repo.id}:{run.github_run_id}:{run.github_attempt}"
+    existing_lock = await session.get(PublicationLock, lock_key)
+    if existing_lock:
+        existing_pub = (
+            await session.execute(select(Publication).where(Publication.lock_key == lock_key))
+        ).scalar_one_or_none()
+        if existing_pub:
+            return {
+                "mode": existing_pub.mode,
+                "pr_url": existing_pub.pr_url,
+                "pr_number": existing_pub.pr_number,
+                "branch": existing_pub.branch,
+                "operation_id": existing_pub.operation_id,
+                "commit_sha": existing_pub.commit_sha,
+            }
+    lock_row = PublicationLock(
+        lock_key=lock_key,
+        tenant_id=principal.tenant_id,
+        publication_id=cand.id,
+        candidate_digest=cand.patch_digest,
+    )
+    if existing_lock is None:
+        session.add(lock_row)
+        try:
+            await session.flush()
+        except IntegrityError:
+            await session.flush()
     publisher = Publisher(ctx.github)
     result = await publisher.publish(
         policy,
@@ -166,15 +217,15 @@ async def publish_candidate(
             patch_digest=cand.patch_digest,
             source_sha=run.source_sha,
             base_sha=run.base_sha,
-            policy_version=run.policy_version,
+            policy_version=current_policy_version,
             evidence_id=record.id if record else cand.id,
             diagnosis_markdown=(run.diagnosis or {}).get("hypothesis", ""),
             verification_markdown=f"badge={cand.badge}",
             safety_ok=repo.publication_mode == "draft_pr",
             safety_fingerprint=repo.safety_fingerprint,
-            approved_fingerprint=repo.safety_fingerprint,
-            refs_unchanged=True,
-            installation_active=True,
+            approved_fingerprint=approval.safety_fingerprint if approval else None,
+            refs_unchanged=refs_unchanged,
+            installation_active=installation_active,
             approved=approval is not None,
             approval_expires_at=approval.expires_at if approval else None,
             approved_digest=approval.patch_digest if approval else None,
@@ -184,6 +235,8 @@ async def publish_candidate(
         ),
     )
     if result.mode == "blocked":
+        if existing_lock is None:
+            await session.delete(lock_row)
         raise HTTPException(
             status_code=400,
             detail={"code": result.reason.value, "message": result.detail, "retryable": False},
@@ -211,6 +264,7 @@ async def publish_candidate(
         mode=result.mode,
         status="completed",
         candidate_digest=cand.patch_digest,
+        commit_sha=result.commit_sha,
     )
     session.add(pub)
     run.state = (
@@ -234,4 +288,5 @@ async def publish_candidate(
         "pr_number": result.pr_number,
         "branch": result.branch,
         "operation_id": result.operation_id,
+        "commit_sha": result.commit_sha,
     }

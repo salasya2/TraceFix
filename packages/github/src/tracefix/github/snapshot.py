@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from tracefix.github.fixture import FixtureGitHub
+from tracefix.verification.pipeline import hash_source_tree
 
 
 async def materialize_fixture_snapshot(
@@ -25,3 +26,7 @@ async def materialize_fixture_snapshot(
         target.write_text(content, encoding="utf-8")
         written.add(path)
     return dest
+
+
+def snapshot_digest(root: Path) -> str:
+    return hash_source_tree(root)

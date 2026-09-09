@@ -3,11 +3,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 import shutil
 import subprocess
 import sys
-from pathlib import Path
 
 from tracefix._paths import ROOT, ensure_src_on_path
 
@@ -153,8 +151,8 @@ def cmd_backup() -> int:
 
 
 async def cmd_openapi() -> int:
-    from tracefix.demo import build_context
     from tracefix.api.app import create_app
+    from tracefix.demo import build_context
 
     ctx = await build_context()
     app = create_app(ctx)
@@ -165,17 +163,9 @@ async def cmd_openapi() -> int:
 
 
 async def cmd_serve() -> int:
-    import uvicorn
+    from tracefix.factory import serve_app
 
-    from tracefix.api.app import create_app
-    from tracefix.demo import build_context
-
-    ctx = await build_context()
-    app = create_app(ctx)
-    print("API http://127.0.0.1:8080")
-    config = uvicorn.Config(app, host="127.0.0.1", port=8080, log_level="info")
-    await uvicorn.Server(config).serve()
-    return 0
+    return await serve_app()
 
 
 async def cmd_demo(serve: bool = False) -> int:

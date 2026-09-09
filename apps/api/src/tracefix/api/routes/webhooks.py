@@ -11,6 +11,7 @@ from tracefix.api.deps import AppContext, get_ctx
 from tracefix.api.metrics import WEBHOOKS
 from tracefix.domain.reasons import ReasonCode
 from tracefix.domain.states import RepairRunState
+from tracefix.github.provenance import resolve_provenance
 from tracefix.github.schemas import WorkflowRunEvent
 from tracefix.github.signature import verify_webhook_signature
 from tracefix.policy.admission import AdmissionContext, admit_event
@@ -77,6 +78,15 @@ async def github_webhook(request: Request) -> dict:
         ).scalars().first()
         policy = RepositoryPolicy.model_validate(policy_row.document) if policy_row else RepositoryPolicy()
         wr = event.workflow_run
+        pull = (wr.pull_requests or [None])[0] or {}
+        provenance = resolve_provenance(
+            event=wr.event,
+            head_sha=wr.head_sha,
+            execution_sha=None,
+            base_sha=pull.get("base", {}).get("sha") if isinstance(pull, dict) else None,
+            merge_sha=pull.get("merge_commit_sha") if isinstance(pull, dict) else None,
+            custom_checkout=False,
+        )
         admission = admit_event(
             policy,
             AdmissionContext(
@@ -84,9 +94,9 @@ async def github_webhook(request: Request) -> dict:
                 is_fork=event.repository.fork,
                 workflow_id=wr.workflow_id,
                 conclusion=wr.conclusion,
-                head_sha=wr.head_sha,
-                execution_sha=wr.head_sha,
-                checkout_trusted=True,
+                head_sha=provenance.head_sha,
+                execution_sha=provenance.execution_sha,
+                checkout_trusted=provenance.trusted,
                 language_profile_ok=True,
                 bot_generated=wr.head_branch.startswith("tracefix/") if wr.head_branch else False,
                 installation_selected=repo.selected,
@@ -115,9 +125,9 @@ async def github_webhook(request: Request) -> dict:
             github_run_id=wr.id,
             github_attempt=wr.run_attempt,
             installation_github_id=event.installation.id if event.installation else 0,
-            source_sha=wr.head_sha,
-            base_sha=wr.head_sha,
-            execution_sha=wr.head_sha,
+            source_sha=provenance.head_sha,
+            base_sha=provenance.base_sha or provenance.head_sha,
+            execution_sha=provenance.execution_sha,
             state=RepairRunState.RECEIVED.value,
             reason_code=ReasonCode.ADMITTED.value,
             policy_version=policy_row.version if policy_row else 1,

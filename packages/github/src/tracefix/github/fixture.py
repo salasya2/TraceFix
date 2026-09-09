@@ -55,6 +55,15 @@ class FixtureGitHub:
     async def get_run_logs(self, owner: str, repo: str, run_id: int, *, attempt: int) -> str:
         return self._repo(owner, repo).logs.get((run_id, attempt), "")
 
+    async def get_ref(self, owner: str, repo: str, ref: str) -> str:
+        repo_obj = self._repo(owner, repo)
+        if ref in repo_obj.refs:
+            return repo_obj.refs[ref]
+        alt = ref if ref.startswith("refs/") else f"refs/heads/{ref}"
+        if alt in repo_obj.refs:
+            return repo_obj.refs[alt]
+        raise KeyError(ref)
+
     async def get_file(self, owner: str, repo: str, path: str, *, ref: str) -> bytes:
         repo_obj = self._repo(owner, repo)
         sha = repo_obj.refs.get(ref, ref)
